@@ -134,6 +134,31 @@ where
         )
     }
 
+    /// Set the max width for inner docs.
+    ///
+    /// ```rust
+    /// use pretty::{Arena, DocAllocator};
+    ///
+    /// let arena = Arena::<()>::new();
+    /// let doc = (arena.text("111") + arena.line() + arena.text("222")).group()
+    ///     + arena.hardline()
+    ///     + (arena.text("333") + arena.line() + arena.text("444"))
+    ///         .group()
+    ///         .max_width(5);
+    /// assert_eq!(doc.pretty(10).to_string(), "111 222\n333\n444");
+    /// ```
+    #[inline]
+    pub fn max_width(self, width: usize) -> DocBuilder<'a, D, A> {
+        if let Doc::Nil = &*self.1 {
+            return self;
+        }
+        let DocBuilder(allocator, this) = self;
+        DocBuilder(
+            allocator,
+            Doc::Width(width, allocator.alloc_cow(this)).into(),
+        )
+    }
+
     #[inline]
     pub fn annotate(self, ann: A) -> DocBuilder<'a, D, A> {
         let DocBuilder(allocator, this) = self;

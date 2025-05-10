@@ -42,8 +42,9 @@ where
     Hardline,
 
     // === Structural combinators ===
-    Append(T, T),   // sequencing
-    Nest(isize, T), // indenting
+    Append(T, T),    // sequencing
+    Nest(isize, T),  // indenting
+    Width(usize, T), // width hint
 
     // === Choice/flattening/grouping ===
     Group(T),      // try flat vs broken
@@ -145,6 +146,7 @@ where
                 f.debug_tuple("Group").field(doc).finish()
             }
             Doc::Nest(off, ref doc) => f.debug_tuple("Nest").field(&off).field(doc).finish(),
+            Doc::Width(width, ref doc) => f.debug_tuple("Width").field(&width).field(doc).finish(),
             Doc::Hardline => f.debug_tuple("Hardline").finish(),
             Doc::RenderLen(_, d) => d.fmt(f),
             Doc::OwnedText(ref s) => s.fmt(f),
@@ -326,6 +328,12 @@ macro_rules! impl_doc {
             #[inline]
             pub fn nest(self, offset: isize) -> Self {
                 DocBuilder(&$allocator, self.into()).nest(offset).into_doc()
+            }
+
+            /// Change max width of inner docs.
+            #[inline]
+            pub fn max_width(self, width: usize) -> Self {
+                DocBuilder(&$allocator, self.into()).max_width(width).into_doc()
             }
 
             #[inline]

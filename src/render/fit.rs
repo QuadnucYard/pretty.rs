@@ -15,13 +15,13 @@ where
     Best {
         pos: 0,
         best_cmds: vec![Cmd {
+            width,
             indent: 0,
             mode: Mode::Break,
             doc,
         }],
         fit_docs: vec![],
         annotation_levels: vec![],
-        width,
         temp_arena,
     }
     .best(0, out)?;
@@ -39,6 +39,7 @@ struct Cmd<'d, 'a, T, A>
 where
     T: DocPtr<'a, A> + 'a,
 {
+    width: usize,
     indent: usize,
     mode: Mode,
     doc: &'d Doc<'a, T, A>,
@@ -52,7 +53,6 @@ where
     best_cmds: Vec<Cmd<'d, 'a, T, A>>,
     fit_docs: Vec<&'d Doc<'a, T, A>>,
     annotation_levels: Vec<usize>,
-    width: usize,
     temp_arena: &'d typed_arena::Arena<T>,
 }
 
@@ -72,7 +72,12 @@ where
 
             // Drill down until we hit a leaf or emit something
             loop {
-                let Cmd { indent, mode, doc } = cmd;
+                let Cmd {
+                    width,
+                    indent,
+                    mode,
+                    doc,
+                } = cmd;
                 match *doc {
                     Doc::Nil => break,
                     Doc::Fail => return Err(out.fail_doc()),
@@ -80,19 +85,19 @@ where
                     Doc::OwnedText(ref s) => {
                         out.write_str_all(s)?;
                         self.pos += s.len();
-                        fits &= self.pos <= self.width;
+                        fits &= self.pos <= width;
                         break;
                     }
                     Doc::BorrowedText(s) => {
                         out.write_str_all(s)?;
                         self.pos += s.len();
-                        fits &= self.pos <= self.width;
+                        fits &= self.pos <= width;
                         break;
                     }
                     Doc::SmallText(ref s) => {
                         out.write_str_all(s)?;
                         self.pos += s.len();
-                        fits &= self.pos <= self.width;
+                        fits &= self.pos <= width;
                         break;
                     }
 
@@ -106,7 +111,7 @@ where
                         };
                         out.write_str_all(str)?;
                         self.pos += len;
-                        fits &= self.pos <= self.width;
+                        fits &= self.pos <= width;
                         break;
                     }
 
@@ -127,17 +132,25 @@ where
                     Doc::Append(ref left, ref right) => {
                         // Push children in reverse so we process ldoc before rdoc
                         cmd.doc = append_docs2(left, right, |doc| {
-                            self.best_cmds.push(Cmd { indent, mode, doc })
+                            self.best_cmds.push(Cmd {
+                                width,
+                                indent,
+                                mode,
+                                doc,
+                            })
                         });
                     }
-
                     Doc::Nest(offset, ref inner) => {
                         cmd.indent = indent.saturating_add_signed(offset);
                         cmd.doc = inner;
                     }
+                    Doc::Width(width, ref inner) => {
+                        cmd.width = width;
+                        cmd.doc = inner;
+                    }
 
                     Doc::Group(ref inner) => {
-                        if mode == Mode::Break && self.fitting(inner, self.pos, indent) {
+                        if mode == Mode::Break && self.fitting(inner, self.pos, width, indent) {
                             cmd.mode = Mode::Flat;
                         }
                         cmd.doc = inner;
@@ -155,6 +168,7 @@ where
                         let save_anns = self.annotation_levels.len();
 
                         self.best_cmds.push(Cmd {
+                            width,
                             indent,
                             mode,
                             doc: left,
@@ -198,7 +212,13 @@ where
         Ok(fits)
     }
 
-    fn fitting(&mut self, next: &'d Doc<'a, T, A>, mut pos: usize, indent: usize) -> bool {
+    fn fitting(
+        &mut self,
+        next: &'d Doc<'a, T, A>,
+        mut pos: usize,
+        mut width: usize,
+        indent: usize,
+    ) -> bool {
         // We start in "flat" mode and may fall back to "break" mode when backtracking.
         let mut cmd_bottom = self.best_cmds.len();
         let mut mode = Mode::Flat;
@@ -226,28 +246,28 @@ where
 
                     Doc::OwnedText(ref s) => {
                         pos += s.len();
-                        if pos > self.width {
+                        if pos > width {
                             return false;
                         }
                         break;
                     }
                     Doc::BorrowedText(s) => {
                         pos += s.len();
-                        if pos > self.width {
+                        if pos > width {
                             return false;
                         }
                         break;
                     }
                     Doc::SmallText(ref s) => {
                         pos += s.len();
-                        if pos > self.width {
+                        if pos > width {
                             return false;
                         }
                         break;
                     }
                     Doc::RenderLen(len, _) => {
                         pos += len;
-                        if pos > self.width {
+                        if pos > width {
                             return false;
                         }
                         break;
@@ -272,6 +292,10 @@ where
                         };
                     }
 
+                    Doc::Width(new_width, ref inner) => {
+                        width = new_width;
+                        doc = inner;
+                    }
                     Doc::Nest(_, ref inner)
                     | Doc::Group(ref inner)
                     | Doc::Annotated(_, ref inner)
