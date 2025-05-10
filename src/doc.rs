@@ -422,7 +422,7 @@ impl<A> Clone for RefDoc<'_, A> {
     }
 }
 
-impl<'a, A> fmt::Debug for RefDoc<'a, A>
+impl<A> fmt::Debug for RefDoc<'_, A>
 where
     A: fmt::Debug,
 {

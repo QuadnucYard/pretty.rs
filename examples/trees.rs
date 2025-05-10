@@ -6,7 +6,7 @@ use std::str;
 pub struct Forest<'a>(&'a [Tree<'a>]);
 
 impl<'a> Forest<'a> {
-    fn forest(forest: &'a [Tree<'a>]) -> Forest<'a> {
+    fn new(forest: &'a [Tree<'a>]) -> Forest<'a> {
         Forest(forest)
     }
 
@@ -60,7 +60,7 @@ impl<'a> Tree<'a> {
     pub fn node_with_forest(node: &str, forest: &'a [Tree<'a>]) -> Tree<'a> {
         Tree {
             node: node.to_string(),
-            forest: Forest::forest(forest),
+            forest: Forest::new(forest),
         }
     }
 

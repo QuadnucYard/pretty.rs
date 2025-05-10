@@ -659,7 +659,7 @@ mod tests {
                 .append(BoxDoc::text("test")),
         );
 
-        test!(usize::max_value(), doc, "test test");
+        test!(usize::MAX, doc, "test test");
     }
 
     #[test]
