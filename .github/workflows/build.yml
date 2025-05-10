@@ -2,23 +2,35 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build
-    - name: Run tests
-      run: cargo test --no-default-features
-    - name: Run benchmarks
-      run: cargo test --all-features --examples --benches
+      - uses: actions/checkout@v4
+
+      - name: rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build
+      - name: Run tests
+        run: |
+          cargo test --no-default-features
+          cargo test --all-features
+      - name: Run examples
+        run: |
+          cargo run --example trees
+          cargo run --example colored --all-features
+      - name: Run benchmarks
+        run: cargo test --all-features --examples --benches
