@@ -28,22 +28,34 @@ pub enum Doc<'a, T, A = ()>
 where
     T: DocPtr<'a, A>,
 {
+    // === Primitive empty and failure ===
     Nil,
-    Append(T, T),
-    Group(T),
-    FlatAlt(T, T),
-    Nest(isize, T),
-    Hardline,
-    // Stores the length of a string document that is not just ascii
-    RenderLen(usize, T),
+    Fail,
+
+    // === Text nodes ===
     OwnedText(Box<str>),
     BorrowedText(&'a str),
     SmallText(SmallText),
-    Annotated(A, T),
-    Union(T, T),
+    RenderLen(usize, T), // Stores the length of a string document that is not just ascii
+
+    // === Line breaks ===
+    Hardline,
+
+    // === Structural combinators ===
+    Append(T, T),   // sequencing
+    Nest(isize, T), // indenting
+
+    // === Choice/flattening/grouping ===
+    Group(T),      // try flat vs broken
+    FlatAlt(T, T), // line vs flat
+    Union(T, T),   // explicit union of layouts
+
+    // === Context related ===
     Column(T::ColumnFn),
     Nesting(T::ColumnFn),
-    Fail,
+
+    // === Annotations ===
+    Annotated(A, T), // attach user data
 }
 
 impl<'a, T, A> Doc<'a, T, A>
