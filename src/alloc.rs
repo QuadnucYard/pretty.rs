@@ -128,6 +128,26 @@ where
         DocBuilder(self, doc).with_utf8_len()
     }
 
+    /// Allocate a document containing n spaces.
+    fn spaces(&'a self, n: usize) -> DocBuilder<'a, Self, A> {
+        use crate::render::SPACES;
+
+        if n == 0 {
+            self.nil()
+        } else if n <= SPACES.len() {
+            self.text(&SPACES[..n])
+        } else {
+            let mut doc = self.nil();
+            let mut remaining = n;
+            while remaining != 0 {
+                let i = SPACES.len().min(remaining);
+                remaining -= i;
+                doc = doc.append(self.text(&SPACES[..i]))
+            }
+            doc
+        }
+    }
+
     /// Allocate a document concatenating the given documents.
     #[inline]
     fn concat<I>(&'a self, docs: I) -> DocBuilder<'a, Self, A>

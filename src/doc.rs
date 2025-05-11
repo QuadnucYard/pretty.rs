@@ -47,6 +47,7 @@ where
     Width(usize, T), // width hint
 
     // === Choice/flattening/grouping ===
+    Flatten(T),
     Group(T),      // try flat vs broken
     FlatAlt(T, T), // line vs flat
     Union(T, T),   // explicit union of layouts
@@ -137,6 +138,7 @@ where
             _ if is_line(self) => f.debug_tuple("Line").finish(),
             _ if is_line_(self) => f.debug_tuple("Line_").finish(),
             Doc::FlatAlt(ref x, ref y) => f.debug_tuple("FlatAlt").field(x).field(y).finish(),
+            Doc::Flatten(ref doc) => f.debug_tuple("Flatten").field(doc).finish(),
             Doc::Group(ref doc) => {
                 if is_line(self) {
                     return f.debug_tuple("SoftLine").finish();

@@ -18,7 +18,7 @@ where
     let temp_arena = &typed_arena::Arena::new();
     Printer {
         pos: 0,
-        best_cmds: vec![Cmd {
+        cmds: vec![Cmd {
             width,
             indent: 0,
             mode: Mode::Break,
@@ -28,7 +28,7 @@ where
         annotation_levels: vec![],
         temp_arena,
     }
-    .best(0, false, out)?;
+    .print_to(0, false, out)?;
 
     Ok(())
 }
@@ -54,7 +54,7 @@ where
     T: DocPtr<'a, A> + 'a,
 {
     pos: usize,
-    best_cmds: Vec<Cmd<'d, 'a, T, A>>,
+    cmds: Vec<Cmd<'d, 'a, T, A>>,
     fit_docs: Vec<&'d Doc<'a, T, A>>,
     annotation_levels: Vec<usize>,
     temp_arena: &'d typed_arena::Arena<T>,
@@ -64,16 +64,16 @@ impl<'d, 'a, T, A> Printer<'d, 'a, T, A>
 where
     T: DocPtr<'a, A> + 'a,
 {
-    fn best<W>(&mut self, top: usize, quick: bool, out: &mut W) -> Result<bool, W::Error>
+    fn print_to<W>(&mut self, top: usize, quick: bool, out: &mut W) -> Result<bool, W::Error>
     where
         W: RenderAnnotated<'d, A>,
         W: ?Sized,
     {
         let mut fits = true;
         let mut on_first_line = true;
-        while self.best_cmds.len() > top {
+        while self.cmds.len() > top {
             // Pop the next command
-            let mut cmd = self.best_cmds.pop().unwrap();
+            let mut cmd = self.cmds.pop().unwrap();
 
             // Drill down until we hit a leaf or emit something
             loop {
@@ -124,7 +124,8 @@ where
                         // The next document may have different indentation so we should use it if
                         // we can
                         on_first_line = false;
-                        if let Some(next) = self.best_cmds.pop() {
+                        fits &= mode == Mode::Break;
+                        if let Some(next) = self.cmds.pop() {
                             write_newline(next.indent, out)?;
                             self.pos = next.indent;
                             cmd = next;
@@ -138,7 +139,7 @@ where
                     Doc::Append(ref left, ref right) => {
                         // Push children in reverse so we process ldoc before rdoc
                         cmd.doc = append_docs2(left, right, |doc| {
-                            self.best_cmds.push(Cmd {
+                            self.cmds.push(Cmd {
                                 width,
                                 indent,
                                 mode,
@@ -155,6 +156,10 @@ where
                         cmd.doc = inner;
                     }
 
+                    Doc::Flatten(ref inner) => {
+                        cmd.mode = Mode::Flat;
+                        cmd.doc = inner;
+                    }
                     Doc::Group(ref inner) => {
                         if mode == Mode::Break
                             && self.fitting(inner, self.pos, width, indent, Mode::Flat)
@@ -172,10 +177,10 @@ where
                     Doc::Union(ref left, ref right) => {
                         // Try the left branch in a buffer
                         let save_pos = self.pos;
-                        let save_cmds = self.best_cmds.len();
+                        let save_cmds = self.cmds.len();
                         let save_anns = self.annotation_levels.len();
 
-                        self.best_cmds.push(Cmd {
+                        self.cmds.push(Cmd {
                             width,
                             indent,
                             mode,
@@ -183,19 +188,21 @@ where
                         });
                         let mut buffer = BufferWrite::new();
 
-                        if let Ok(true) = self.best(save_cmds, quick, &mut buffer) {
+                        if let Ok(true) = self.print_to(save_cmds, quick, &mut buffer) {
                             buffer.render(out)?;
                             break;
                         } else {
                             // Revert and try right
                             self.pos = save_pos;
-                            self.best_cmds.truncate(save_cmds);
+                            self.cmds.truncate(save_cmds);
                             self.annotation_levels.truncate(save_anns);
                             cmd.doc = right;
                         }
                     }
                     Doc::QuickUnion(ref left, ref right) => {
-                        if self.fitting(left, self.pos, width, indent, Mode::Break) {
+                        if mode == Mode::Flat
+                            || self.fitting(left, self.pos, width, indent, Mode::Break)
+                        {
                             cmd.doc = left;
                         } else {
                             cmd.doc = right;
@@ -211,14 +218,14 @@ where
 
                     Doc::Annotated(ref ann, ref inner) => {
                         out.push_annotation(ann)?;
-                        self.annotation_levels.push(self.best_cmds.len());
+                        self.annotation_levels.push(self.cmds.len());
                         cmd.doc = inner;
                     }
                 }
             }
 
             // Pop any annotations that were opened at this stack depth
-            while self.annotation_levels.last() == Some(&self.best_cmds.len()) {
+            while self.annotation_levels.last() == Some(&self.cmds.len()) {
                 self.annotation_levels.pop();
                 out.pop_annotation()?;
             }
@@ -235,7 +242,7 @@ where
         mut mode: Mode,
     ) -> bool {
         // We start in "flat" mode and may fall back to "break" mode when backtracking.
-        let mut cmd_bottom = self.best_cmds.len();
+        let mut cmd_bottom = self.cmds.len();
 
         // fit_docs is our work‐stack for documents to check in flat mode.
         self.fit_docs.clear();
@@ -247,9 +254,9 @@ where
             let mut doc = if let Some(d) = self.fit_docs.pop() {
                 d
             } else {
-                cmd_bottom -= 1;
                 mode = Mode::Break;
-                self.best_cmds[cmd_bottom].doc
+                cmd_bottom -= 1;
+                self.cmds[cmd_bottom].doc
             };
 
             // Drill into this doc until we either bail or consume a leaf.
@@ -297,6 +304,10 @@ where
                         doc = append_docs2(left, right, |d| self.fit_docs.push(d));
                     }
 
+                    Doc::Flatten(ref inner) => {
+                        mode = Mode::Flat;
+                        doc = inner;
+                    }
                     Doc::FlatAlt(ref break_doc, ref flat_doc) => {
                         // Select branch based on current mode.
                         doc = if mode == Mode::Break {

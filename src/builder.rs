@@ -97,6 +97,21 @@ where
         )
     }
 
+    #[inline]
+    pub fn flatten(self) -> DocBuilder<'a, D, A> {
+        match *self.1 {
+            Doc::Flatten(_)
+            | Doc::OwnedText(_)
+            | Doc::BorrowedText(_)
+            | Doc::SmallText(_)
+            | Doc::Nil => self,
+            _ => {
+                let DocBuilder(allocator, this) = self;
+                DocBuilder(allocator, Doc::Flatten(allocator.alloc_cow(this)).into())
+            }
+        }
+    }
+
     /// Mark this document as a group.
     ///
     /// Groups are layed out on a single line if possible.  Within a group, all basic documents with
@@ -352,6 +367,17 @@ where
 
     pub fn brackets(self) -> DocBuilder<'a, D, A> {
         self.enclose("[", "]")
+    }
+
+    pub fn repeat_n(self, n: usize) -> Self
+    where
+        Self: Clone,
+    {
+        let mut doc = self.0.nil();
+        for _ in 0..n {
+            doc = doc.append(self.clone());
+        }
+        doc
     }
 
     pub fn into_doc(self) -> D::Doc {
