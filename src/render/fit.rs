@@ -49,13 +49,22 @@ where
     doc: &'d Doc<'a, T, A>,
 }
 
+struct FitCmd<'d, 'a, T, A>
+where
+    T: DocPtr<'a, A> + 'a,
+{
+    width: usize,
+    mode: Mode,
+    doc: &'d Doc<'a, T, A>,
+}
+
 struct Printer<'d, 'a, T, A>
 where
     T: DocPtr<'a, A> + 'a,
 {
     pos: usize,
     cmds: Vec<Cmd<'d, 'a, T, A>>,
-    fit_docs: Vec<&'d Doc<'a, T, A>>,
+    fit_docs: Vec<FitCmd<'d, 'a, T, A>>,
     annotation_levels: Vec<usize>,
     temp_arena: &'d typed_arena::Arena<T>,
 }
@@ -237,27 +246,36 @@ where
         &mut self,
         next: &'d Doc<'a, T, A>,
         mut pos: usize,
-        mut width: usize,
+        width: usize,
         indent: usize,
-        mut mode: Mode,
+        mode: Mode,
     ) -> bool {
         // We start in "flat" mode and may fall back to "break" mode when backtracking.
         let mut cmd_bottom = self.cmds.len();
 
         // fit_docs is our work‐stack for documents to check in flat mode.
         self.fit_docs.clear();
-        self.fit_docs.push(next);
+        self.fit_docs.push(FitCmd {
+            width,
+            mode,
+            doc: next,
+        });
 
         // As long as we have either flat‐stack items or break commands to try...
         while cmd_bottom > 0 || !self.fit_docs.is_empty() {
             // Pop the next doc to inspect, or backtrack to bcmds in break mode.
-            let mut doc = if let Some(d) = self.fit_docs.pop() {
-                d
-            } else {
-                mode = Mode::Break;
+            let FitCmd {
+                mut width,
+                mut mode,
+                mut doc,
+            } = self.fit_docs.pop().unwrap_or_else(|| {
                 cmd_bottom -= 1;
-                self.cmds[cmd_bottom].doc
-            };
+                FitCmd {
+                    width,
+                    mode: Mode::Break,
+                    doc: self.cmds[cmd_bottom].doc,
+                }
+            });
 
             // Drill into this doc until we either bail or consume a leaf.
             loop {
@@ -301,7 +319,9 @@ where
 
                     Doc::Append(ref left, ref right) => {
                         // Push r then l so we process l first.
-                        doc = append_docs2(left, right, |d| self.fit_docs.push(d));
+                        doc = append_docs2(left, right, |doc| {
+                            self.fit_docs.push(FitCmd { width, mode, doc })
+                        });
                     }
 
                     Doc::Flatten(ref inner) => {
