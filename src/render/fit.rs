@@ -5,14 +5,18 @@ use super::{
     RenderAnnotated,
 };
 
-pub fn best<'a, W, T, A>(doc: &Doc<'a, T, A>, width: usize, out: &mut W) -> Result<(), W::Error>
+pub fn print_doc<'a, W, T, A>(
+    doc: &Doc<'a, T, A>,
+    width: usize,
+    out: &mut W,
+) -> Result<(), W::Error>
 where
     T: DocPtr<'a, A> + 'a,
     for<'b> W: RenderAnnotated<'b, A>,
     W: ?Sized,
 {
     let temp_arena = &typed_arena::Arena::new();
-    Best {
+    Printer {
         pos: 0,
         best_cmds: vec![Cmd {
             width,
@@ -24,7 +28,7 @@ where
         annotation_levels: vec![],
         temp_arena,
     }
-    .best(0, out)?;
+    .best(0, false, out)?;
 
     Ok(())
 }
@@ -45,7 +49,7 @@ where
     doc: &'d Doc<'a, T, A>,
 }
 
-struct Best<'d, 'a, T, A>
+struct Printer<'d, 'a, T, A>
 where
     T: DocPtr<'a, A> + 'a,
 {
@@ -56,16 +60,17 @@ where
     temp_arena: &'d typed_arena::Arena<T>,
 }
 
-impl<'d, 'a, T, A> Best<'d, 'a, T, A>
+impl<'d, 'a, T, A> Printer<'d, 'a, T, A>
 where
     T: DocPtr<'a, A> + 'a,
 {
-    fn best<W>(&mut self, top: usize, out: &mut W) -> Result<bool, W::Error>
+    fn best<W>(&mut self, top: usize, quick: bool, out: &mut W) -> Result<bool, W::Error>
     where
         W: RenderAnnotated<'d, A>,
         W: ?Sized,
     {
         let mut fits = true;
+        let mut on_first_line = true;
         while self.best_cmds.len() > top {
             // Pop the next command
             let mut cmd = self.best_cmds.pop().unwrap();
@@ -85,19 +90,19 @@ where
                     Doc::OwnedText(ref s) => {
                         out.write_str_all(s)?;
                         self.pos += s.len();
-                        fits &= self.pos <= width;
+                        fits &= self.pos <= width || quick && !on_first_line;
                         break;
                     }
                     Doc::BorrowedText(s) => {
                         out.write_str_all(s)?;
                         self.pos += s.len();
-                        fits &= self.pos <= width;
+                        fits &= self.pos <= width || quick && !on_first_line;
                         break;
                     }
                     Doc::SmallText(ref s) => {
                         out.write_str_all(s)?;
                         self.pos += s.len();
-                        fits &= self.pos <= width;
+                        fits &= self.pos <= width || quick && !on_first_line;
                         break;
                     }
 
@@ -111,13 +116,14 @@ where
                         };
                         out.write_str_all(str)?;
                         self.pos += len;
-                        fits &= self.pos <= width;
+                        fits &= self.pos <= width || quick && !on_first_line;
                         break;
                     }
 
                     Doc::Hardline => {
                         // The next document may have different indentation so we should use it if
                         // we can
+                        on_first_line = false;
                         if let Some(next) = self.best_cmds.pop() {
                             write_newline(next.indent, out)?;
                             self.pos = next.indent;
@@ -150,7 +156,9 @@ where
                     }
 
                     Doc::Group(ref inner) => {
-                        if mode == Mode::Break && self.fitting(inner, self.pos, width, indent) {
+                        if mode == Mode::Break
+                            && self.fitting(inner, self.pos, width, indent, Mode::Flat)
+                        {
                             cmd.mode = Mode::Flat;
                         }
                         cmd.doc = inner;
@@ -175,7 +183,7 @@ where
                         });
                         let mut buffer = BufferWrite::new();
 
-                        if let Ok(true) = self.best(save_cmds, &mut buffer) {
+                        if let Ok(true) = self.best(save_cmds, quick, &mut buffer) {
                             buffer.render(out)?;
                             break;
                         } else {
@@ -183,6 +191,13 @@ where
                             self.pos = save_pos;
                             self.best_cmds.truncate(save_cmds);
                             self.annotation_levels.truncate(save_anns);
+                            cmd.doc = right;
+                        }
+                    }
+                    Doc::QuickUnion(ref left, ref right) => {
+                        if self.fitting(left, self.pos, width, indent, Mode::Break) {
+                            cmd.doc = left;
+                        } else {
                             cmd.doc = right;
                         }
                     }
@@ -208,7 +223,6 @@ where
                 out.pop_annotation()?;
             }
         }
-
         Ok(fits)
     }
 
@@ -218,10 +232,10 @@ where
         mut pos: usize,
         mut width: usize,
         indent: usize,
+        mut mode: Mode,
     ) -> bool {
         // We start in "flat" mode and may fall back to "break" mode when backtracking.
         let mut cmd_bottom = self.best_cmds.len();
-        let mut mode = Mode::Flat;
 
         // fit_docs is our work‐stack for documents to check in flat mode.
         self.fit_docs.clear();
@@ -299,7 +313,8 @@ where
                     Doc::Nest(_, ref inner)
                     | Doc::Group(ref inner)
                     | Doc::Annotated(_, ref inner)
-                    | Doc::Union(_, ref inner) => {
+                    | Doc::Union(_, ref inner)
+                    | Doc::QuickUnion(_, ref inner) => {
                         doc = inner;
                     }
 

@@ -179,6 +179,18 @@ where
         DocBuilder(allocator, doc.into())
     }
 
+    /// Like `union`, but it only ensures fitting on the first line.
+    #[inline]
+    pub fn quick_union<E>(self, other: E) -> DocBuilder<'a, D, A>
+    where
+        E: Into<BuildDoc<'a, D::Doc, A>>,
+    {
+        let DocBuilder(allocator, this) = self;
+        let other = other.into();
+        let doc = Doc::QuickUnion(allocator.alloc_cow(this), allocator.alloc_cow(other));
+        DocBuilder(allocator, doc.into())
+    }
+
     /// Lays out `self` so with the nesting level set to the current column
     ///
     /// NOTE: The doc pointer type, `D` may need to be cloned. Consider using cheaply cloneable ptr

@@ -50,6 +50,7 @@ where
     Group(T),      // try flat vs broken
     FlatAlt(T, T), // line vs flat
     Union(T, T),   // explicit union of layouts
+    QuickUnion(T, T),
 
     // === Context related ===
     Column(T::ColumnFn),
@@ -156,6 +157,7 @@ where
                 f.debug_tuple("Annotated").field(ann).field(doc).finish()
             }
             Doc::Union(ref l, ref r) => f.debug_tuple("Union").field(l).field(r).finish(),
+            Doc::QuickUnion(ref l, ref r) => f.debug_tuple("QuickUnion").field(l).field(r).finish(),
             Doc::Column(_) => f.debug_tuple("Column(..)").finish(),
             Doc::Nesting(_) => f.debug_tuple("Nesting(..)").finish(),
             Doc::Fail => f.debug_tuple("Fail").finish(),
